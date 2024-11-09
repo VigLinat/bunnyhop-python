@@ -1,18 +1,16 @@
 import json
+from typing import Optional
 
 class BHMessage:
-    type: str
-    body: str
     def __init__(self, type: str, body: str):
-        self.body = body
-        self.type = type
+        self.body: str = body
+        self.type: str = type
 
-    def to_json(self) -> str:
-        return json.dumps({'type': self.type, 'body': self.body})
+def to_json(bh_message: BHMessage) -> str:
+    return json.dumps({'type': bh_message.type, 'body': bh_message.body})
 
-    def from_json(self, text: str) -> None:
-        message_json = json.loads(text)
-        if 'type' in message_json:
-            self.type = message_json['type']
-        if 'body' in message_json:
-            self.body = message_json['body']
+def from_json(json_str: str) -> Optional[BHMessage]:
+    json_dict = json.loads(json_str)
+    type = json_dict['type']
+    body = json_dict['body']
+    return BHMessage(type, body) if type is not None and body is not None else None

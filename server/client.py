@@ -1,34 +1,56 @@
-from server.message import Message
-from server.room import Room
-from server.room import get_room
-from server.room import add_room
+import bh_message.bh_message
 from util.helper import log
-from bh_message.bh_message import BHMessage
 
-import json
 from websockets.asyncio.client import ClientConnection
+from dataclasses import dataclass
+
+class Room:
+    def __init__(self, name: str):
+        self.name = name
+        self.clients: set[Client] = set()
+
+    def register(self, client: Client):
+        self.clients.add(client)
+
+    def unregister(self, client: Client):
+        if (client in self.clients):
+            self.clients.remove(client)
+
+    async def broadcast(self, sender: Client, text: str):
+        for client in self.clients:
+            if (client != sender):
+                await client.push(text)
+
+    def get_room(name: str) -> Room:
+        return Room._all_rooms[name]
+
+    def add_room(name: str) -> Room:
+        if name in Room._all_rooms:
+            return Room._all_rooms[name]
+        else:
+            new_room = Room(name)
+            Room._all_rooms[name] = new_room
+            return new_room
+
+Room._global_room = Room("global")
+Room._all_rooms = {'global': Room._global_room}
 
 class Client:
-    conn: ClientConnection
-    room: Room
-    name: str
-
     def __init__(self, conn: ClientConnection):
-        self.conn = conn
-        name = "anon" # TODO
-        room = None
+        self.conn: ClientConnection = conn
+        self.name: str = "anon" # TODO
+        self.room: Room = None
 
     def register(self):
         if self.room != None:
             self.room.register(self)
-
     def unregister(self):
         if self.room != None:
             self.room.unregister(self)
 
-    def broadcast(self, text: str):
+    async def broadcast(self, text: str):
         if self.room != None:
-            self.room.broadcast(Message(self, text))
+            await self.room.broadcast(self, text)
         pass
 
     def switch_room(self, new_room: Room):
@@ -36,36 +58,22 @@ class Client:
         self.room = new_room
         self.register()
 
-    async def push(self, message: Message):
-        await self.conn.send(message.content)
+    async def push(self, text: str):
+        await self.conn.send(text)
 
-    async def read(self):
-        async for message in self.conn:
-            remote = self.conn.remote_address
-            log(f'[{remote}]: {message}')
-            self.handle_message(message)
-
-    def handle_message(self, input: str):
-        message = BHMessage()
-        message.from_json(input)
+    async def handle_message(self, input: str):
+        message = bh_message.bh_message.from_json(input)
+        if message is None: return
 
         match message.type:
-            case 'text': self.broadcast(message.body)
+            case 'text': await self.broadcast(message.body)
             case 'join':
                 room_name = message.body
                 try:
-                    room = get_room(room_name)
+                    room = Room.get_room(room_name)
                 except KeyError:
                     return
                 self.switch_room(room)
             case 'create':
-                room = add_room(message.body)
+                room = Room.add_room(message.body)
                 self.switch_room(room)
-
-async def handle_new_client(websocket: ClientConnection):
-    log(f'Received connection: {websocket.remote_address}')
-    new_client = Client(websocket)
-    # we could extract self.conn from server.client.Client entirely
-    # and run the 'async for ...' in here
-    await new_client.read()
-    pass
