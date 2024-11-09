@@ -1,4 +1,7 @@
+#!/usr/bin/python
+
 import client.client as client
+
 import asyncio
 
 if __name__ == "__main__":
